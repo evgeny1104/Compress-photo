@@ -140,7 +140,11 @@
             return;
           }
           setErrors(new Map());
-          setOriginalFiles(imageFiles.slice(0, 5));
+          setOriginalFiles(prevFiles => {
+             // Clean up results of old files if any
+             compressedResults.forEach(result => URL.revokeObjectURL(result.url));
+             return imageFiles.slice(0, 5);
+          });
           setCompressedResults(new Map());
         };
 
@@ -206,9 +210,7 @@
                 (blob) => {
                   if (blob) {
                     if (blob.size > 5 * 1024 * 1024) {
-                       console.warn("Compressed file is larger than 5MB. Trying lower quality.");
-                       // Optionally, you can try to re-compress with lower quality here,
-                       // but for now we just resolve it.
+                       console.warn("Compressed file is larger than 5MB.");
                     }
                     resolve({
                       blob,
@@ -232,13 +234,23 @@
         useEffect(() => {
           if (originalFiles.length === 0) return;
 
+          let isActive = true;
+
           const processFiles = async () => {
             setIsProcessing(true);
-            const oldResults = compressedResults;
 
             const results = await Promise.allSettled(
               originalFiles.map(file => compressFile(file, quality))
             );
+
+            if (!isActive) {
+                results.forEach(result => {
+                    if (result.status === 'fulfilled' && result.value.url) {
+                        URL.revokeObjectURL(result.value.url);
+                    }
+                });
+                return;
+            };
 
             const newCompressedResults = new Map();
             const newErrors = new Map();
@@ -257,27 +269,30 @@
                  newErrors.set(file.name, message);
               }
             });
-
-            setCompressedResults(newCompressedResults);
+            
+            setCompressedResults(prevResults => {
+                prevResults.forEach(value => URL.revokeObjectURL(value.url));
+                return newCompressedResults;
+            });
             setErrors(newErrors);
             setIsProcessing(false);
-
-            // Очистка URL-ов от предыдущего рендера
-            oldResults.forEach(result => URL.revokeObjectURL(result.url));
           };
           
-          // Дебаунс для ползунка, чтобы не пересжимать на каждое движение
           const handler = setTimeout(processFiles, 250);
 
-          return () => clearTimeout(handler);
+          return () => {
+            isActive = false;
+            clearTimeout(handler);
+          };
         }, [originalFiles, quality, compressFile]);
 
+        // Final cleanup on unmount
         useEffect(() => {
-          // Очистка при размонтировании компонента
           return () => {
              compressedResults.forEach(result => URL.revokeObjectURL(result.url));
           }
-        }, [compressedResults]);
+        }, []);
+
 
         return (
           <div className="flex items-center justify-center min-h-screen p-4 bg-transparent font-sans">
@@ -335,7 +350,7 @@
                               <CloseIcon className="w-4 h-4 text-gray-600 hover:text-red-500"/>
                             </button>
                           <div className="w-16 h-16 flex-shrink-0 bg-gray-200 rounded-md overflow-hidden flex items-center justify-center">
-                            {isItemProcessing ? (
+                            {isProcessing ? (
                                 <Spinner />
                             ) : result ? (
                                 <img src={result.url} alt="Preview" className="w-full h-full object-contain" />
@@ -349,7 +364,7 @@
                             <div className="mt-1 text-xs text-gray-600">
                               <span>{formatBytes(file.size)}</span>
                               <span className="mx-1">→</span>
-                              {isItemProcessing ? (
+                              {isProcessing ? (
                                 <span className="italic text-gray-500">сжимается...</span>
                               ) : result ? (
                                 <span className="font-medium text-green-600">{formatBytes(result.size)} ({sizeReduction}%)</span>
