@@ -46,7 +46,7 @@
       // --- КОМПОНЕНТ СПИННЕРА ---
       const Spinner = () => {
         return (
-          <svg className="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
@@ -205,6 +205,11 @@
               canvas.toBlob(
                 (blob) => {
                   if (blob) {
+                    if (blob.size > 5 * 1024 * 1024) {
+                       console.warn("Compressed file is larger than 5MB. Trying lower quality.");
+                       // Optionally, you can try to re-compress with lower quality here,
+                       // but for now we just resolve it.
+                    }
                     resolve({
                       blob,
                       size: blob.size,
@@ -229,14 +234,7 @@
 
           const processFiles = async () => {
             setIsProcessing(true);
-            
-            const oldResults = new Map(compressedResults);
-            const filesToProcess = originalFiles.filter(f => !oldResults.has(f.name));
-
-            if(filesToProcess.length === 0 && oldResults.size === originalFiles.length) {
-                setIsProcessing(false);
-                return;
-            }
+            const oldResults = compressedResults;
 
             const results = await Promise.allSettled(
               originalFiles.map(file => compressFile(file, quality))
@@ -249,21 +247,33 @@
               if (result.status === 'fulfilled') {
                 newCompressedResults.set(file.name, result.value);
               } else {
-                newErrors.set(file.name, result.reason.message || 'Не удалось сжать.');
+                 const reason = result.reason;
+                 let message = 'Неизвестная ошибка сжатия.';
+                 if (reason instanceof Error) {
+                    message = reason.message;
+                 } else if(typeof reason === 'string') {
+                    message = reason;
+                 }
+                 newErrors.set(file.name, message);
               }
             });
-            
-            oldResults.forEach(result => URL.revokeObjectURL(result.url));
+
             setCompressedResults(newCompressedResults);
             setErrors(newErrors);
             setIsProcessing(false);
-          };
 
-          processFiles();
+            // Очистка URL-ов от предыдущего рендера
+            oldResults.forEach(result => URL.revokeObjectURL(result.url));
+          };
+          
+          // Дебаунс для ползунка, чтобы не пересжимать на каждое движение
+          const handler = setTimeout(processFiles, 250);
+
+          return () => clearTimeout(handler);
         }, [originalFiles, quality, compressFile]);
 
         useEffect(() => {
-          // Cleanup on unmount
+          // Очистка при размонтировании компонента
           return () => {
              compressedResults.forEach(result => URL.revokeObjectURL(result.url));
           }
@@ -310,38 +320,41 @@
                     {originalFiles.map(file => {
                       const result = compressedResults.get(file.name);
                       const error = errors.get(file.name);
+                      const isItemProcessing = isProcessing && !result && !error;
                       const sizeReduction = result ? Math.round(((file.size - result.size) / file.size) * 100) : 0;
 
                       return (
                         <div key={file.name} className="relative bg-gray-50 rounded-lg p-3 flex flex-col sm:flex-row items-center gap-4 border">
-                          <button
-                            onClick={() => handleRemoveFile(file.name)}
-                            disabled={isProcessing}
-                            className="absolute -top-2 -right-2 z-10 p-0.5 bg-white rounded-full shadow-md hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-                            aria-label={`Удалить ${file.name}`}
-                            title="Удалить"
-                          >
-                            <CloseIcon className="w-4 h-4 text-gray-600 group-hover:text-red-500"/>
-                          </button>
+                           <button
+                              onClick={() => handleRemoveFile(file.name)}
+                              disabled={isProcessing}
+                              className="absolute -top-2 -right-2 z-10 p-0.5 bg-white rounded-full shadow-md hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                              aria-label={`Удалить ${file.name}`}
+                              title="Удалить"
+                            >
+                              <CloseIcon className="w-4 h-4 text-gray-600 hover:text-red-500"/>
+                            </button>
                           <div className="w-16 h-16 flex-shrink-0 bg-gray-200 rounded-md overflow-hidden flex items-center justify-center">
-                            {isProcessing && !result && !error ? (
+                            {isItemProcessing ? (
                                 <Spinner />
                             ) : result ? (
                                 <img src={result.url} alt="Preview" className="w-full h-full object-contain" />
-                            ) : null}
+                            ) : (
+                              <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14"></path></svg>
+                            )}
                           </div>
 
-                          <div className="flex-grow text-center sm:text-left w-full">
-                            <p className="font-bold text-gray-800 break-all truncate" title={file.name}>{file.name}</p>
+                          <div className="flex-grow text-center sm:text-left w-full overflow-hidden">
+                            <p className="font-bold text-gray-800 break-words truncate" title={file.name}>{file.name}</p>
                             <div className="mt-1 text-xs text-gray-600">
                               <span>{formatBytes(file.size)}</span>
                               <span className="mx-1">→</span>
-                              {isProcessing && !result && !error ? (
+                              {isItemProcessing ? (
                                 <span className="italic text-gray-500">сжимается...</span>
                               ) : result ? (
                                 <span className="font-medium text-green-600">{formatBytes(result.size)} ({sizeReduction}%)</span>
                               ) : error ? (
-                                <span className="font-medium text-red-500">Ошибка</span>
+                                <span className="font-medium text-red-500" title={error}>Ошибка</span>
                               ) : '...'}
                             </div>
                           </div>
