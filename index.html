@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Сжатие Изображений</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+  }
+}
+</script>
+</head>
+  <body class="bg-transparent">
+    <div id="root"></div>
+    <script type="text/babel" data-type="module">
+      import React, { useState, useEffect, useCallback } from 'react';
+      import ReactDOM from 'react-dom/client';
+
+      // --- КОМПОНЕНТЫ ИКОНОК ---
+      const UploadIcon = (props) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+        </svg>
+      );
+
+      const DownloadIcon = (props) => (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+      );
+      
+      const CloseIcon = (props) => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      );
+
+
+      // --- КОМПОНЕНТ СПИННЕРА ---
+      const Spinner = () => {
+        return (
+          <svg className="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        );
+      };
+
+      // --- КОМПОНЕНТ ЗАГРУЗЧИКА ФАЙЛОВ ---
+      const FileUploader = ({ onFileSelect }) => {
+        const [isDragging, setIsDragging] = useState(false);
+
+        const handleFileChange = (event) => {
+          if (event.target.files && event.target.files.length > 0) {
+            onFileSelect(Array.from(event.target.files));
+          }
+        };
+
+        const handleDragEnter = useCallback((e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragging(true);
+        }, []);
+
+        const handleDragLeave = useCallback((e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragging(false);
+        }, []);
+
+        const handleDragOver = useCallback((e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }, []);
+        
+        const handleDrop = useCallback((e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragging(false);
+          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            onFileSelect(Array.from(e.dataTransfer.files));
+          }
+        }, [onFileSelect]);
+
+        return (
+          <label
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            className={`flex justify-center items-center w-full px-6 py-12 border-2 border-dashed rounded-lg cursor-pointer transition-colors duration-300 ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}
+          >
+            <div className="text-center">
+              <UploadIcon className={`w-12 h-12 mx-auto mb-4 transition-colors duration-300 ${isDragging ? 'text-blue-600' : 'text-gray-400'}`} />
+              <h3 className="text-lg font-semibold text-gray-700">
+                Перетащите изображения сюда
+              </h3>
+              <p className="text-gray-500">или</p>
+              <p className="font-semibold text-blue-600">нажмите для выбора файлов</p>
+              <input
+                type="file"
+                className="hidden"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleFileChange}
+                multiple
+              />
+            </div>
+          </label>
+        );
+      };
+
+      // --- ОСНОВНОЙ КОМПОНЕНТ ПРИЛОЖЕНИЯ ---
+      const App = () => {
+        const [originalFiles, setOriginalFiles] = useState([]);
+        const [quality, setQuality] = useState(0.8);
+        const [isProcessing, setIsProcessing] = useState(false);
+        const [compressedResults, setCompressedResults] = useState(new Map());
+        const [errors, setErrors] = useState(new Map());
+
+        const formatBytes = (bytes, decimals = 2) => {
+          if (bytes === 0) return '0 Bytes';
+          const k = 1024;
+          const dm = decimals < 0 ? 0 : decimals;
+          const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+          const i = Math.floor(Math.log(bytes) / Math.log(k));
+          return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        };
+
+        const handleFileSelect = (files) => {
+          const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+          if (imageFiles.length === 0 && files.length > 0) {
+            setErrors(new Map([['global', 'Пожалуйста, выберите файлы изображений.']]));
+            return;
+          }
+          setErrors(new Map());
+          setOriginalFiles(imageFiles.slice(0, 5));
+          setCompressedResults(new Map());
+        };
+
+        const handleReset = () => {
+          compressedResults.forEach(result => URL.revokeObjectURL(result.url));
+          setOriginalFiles([]);
+          setCompressedResults(new Map());
+          setErrors(new Map());
+          setQuality(0.8);
+        };
+        
+        const getCompressedFileName = (originalName) => {
+          const nameParts = originalName.split('.');
+          nameParts.pop();
+          return `${nameParts.join('.')}_KolerskyAI_compressed.jpg`;
+        };
+
+        const handleRemoveFile = (fileNameToRemove) => {
+            const resultToRemove = compressedResults.get(fileNameToRemove);
+            if (resultToRemove) {
+              URL.revokeObjectURL(resultToRemove.url);
+            }
+            
+            setOriginalFiles(prevFiles => prevFiles.filter(file => file.name !== fileNameToRemove));
+            
+            setCompressedResults(prevMap => {
+              const newMap = new Map(prevMap);
+              newMap.delete(fileNameToRemove);
+              return newMap;
+            });
+
+            setErrors(prevMap => {
+                const newMap = new Map(prevMap);
+                newMap.delete(fileNameToRemove);
+                return newMap;
+            });
+        };
+
+        const compressFile = useCallback((file, qualityValue) => {
+          return new Promise((resolve, reject) => {
+            const image = new Image();
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+              if (typeof e.target?.result !== 'string') {
+                return reject(new Error('Не удалось прочитать файл.'));
+              }
+              image.src = e.target.result;
+            };
+            reader.onerror = () => reject(new Error('Ошибка чтения файла.'));
+
+            image.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = image.width;
+              canvas.height = image.height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                return reject(new Error('Не удалось получить контекст холста.'));
+              }
+              ctx.drawImage(image, 0, 0);
+
+              canvas.toBlob(
+                (blob) => {
+                  if (blob) {
+                    resolve({
+                      blob,
+                      size: blob.size,
+                      url: URL.createObjectURL(blob),
+                    });
+                  } else {
+                    reject(new Error('Не удалось создать blob.'));
+                  }
+                },
+                'image/jpeg',
+                qualityValue
+              );
+            };
+            image.onerror = () => reject(new Error('Не удалось загрузить изображение.'));
+
+            reader.readAsDataURL(file);
+          });
+        }, []);
+
+        useEffect(() => {
+          if (originalFiles.length === 0) return;
+
+          const processFiles = async () => {
+            setIsProcessing(true);
+            
+            const oldResults = new Map(compressedResults);
+            const filesToProcess = originalFiles.filter(f => !oldResults.has(f.name));
+
+            if(filesToProcess.length === 0 && oldResults.size === originalFiles.length) {
+                setIsProcessing(false);
+                return;
+            }
+
+            const results = await Promise.allSettled(
+              originalFiles.map(file => compressFile(file, quality))
+            );
+
+            const newCompressedResults = new Map();
+            const newErrors = new Map();
+            results.forEach((result, index) => {
+              const file = originalFiles[index];
+              if (result.status === 'fulfilled') {
+                newCompressedResults.set(file.name, result.value);
+              } else {
+                newErrors.set(file.name, result.reason.message || 'Не удалось сжать.');
+              }
+            });
+            
+            oldResults.forEach(result => URL.revokeObjectURL(result.url));
+            setCompressedResults(newCompressedResults);
+            setErrors(newErrors);
+            setIsProcessing(false);
+          };
+
+          processFiles();
+        }, [originalFiles, quality, compressFile]);
+
+        useEffect(() => {
+          // Cleanup on unmount
+          return () => {
+             compressedResults.forEach(result => URL.revokeObjectURL(result.url));
+          }
+        }, [compressedResults]);
+
+        return (
+          <div className="flex items-center justify-center min-h-screen p-4 bg-transparent font-sans">
+            <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl p-6 md:p-8 transition-all duration-300">
+              {originalFiles.length === 0 ? (
+                <>
+                  <h1 className="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-2">Сжатие Изображений</h1>
+                  <p className="text-center text-gray-500 mb-6">Уменьшайте размер файлов JPEG. Можно загрузить до 5 файлов.</p>
+                  <FileUploader onFileSelect={handleFileSelect} />
+                  {errors.has('global') && <p className="text-red-500 text-center mt-4">{errors.get('global')}</p>}
+                </>
+              ) : (
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-bold text-gray-800">Результаты сжатия</h2>
+                    <button
+                      onClick={handleReset}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-semibold transition-colors"
+                    >
+                      Загрузить новые
+                    </button>
+                  </div>
+                  
+                  <div className="mb-6">
+                      <label htmlFor="quality" className="block text-sm font-medium text-gray-700 mb-2">Качество: <span className="font-bold text-blue-600">{Math.round(quality * 100)}%</span></label>
+                      <input
+                          id="quality"
+                          type="range"
+                          min="0.1"
+                          max="1"
+                          step="0.05"
+                          value={quality}
+                          onChange={(e) => setQuality(parseFloat(e.target.value))}
+                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                          disabled={isProcessing}
+                      />
+                  </div>
+
+                  <div className="space-y-4">
+                    {originalFiles.map(file => {
+                      const result = compressedResults.get(file.name);
+                      const error = errors.get(file.name);
+                      const sizeReduction = result ? Math.round(((file.size - result.size) / file.size) * 100) : 0;
+
+                      return (
+                        <div key={file.name} className="relative bg-gray-50 rounded-lg p-3 flex flex-col sm:flex-row items-center gap-4 border">
+                          <button
+                            onClick={() => handleRemoveFile(file.name)}
+                            disabled={isProcessing}
+                            className="absolute -top-2 -right-2 z-10 p-0.5 bg-white rounded-full shadow-md hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                            aria-label={`Удалить ${file.name}`}
+                            title="Удалить"
+                          >
+                            <CloseIcon className="w-4 h-4 text-gray-600 group-hover:text-red-500"/>
+                          </button>
+                          <div className="w-16 h-16 flex-shrink-0 bg-gray-200 rounded-md overflow-hidden flex items-center justify-center">
+                            {isProcessing && !result && !error ? (
+                                <Spinner />
+                            ) : result ? (
+                                <img src={result.url} alt="Preview" className="w-full h-full object-contain" />
+                            ) : null}
+                          </div>
+
+                          <div className="flex-grow text-center sm:text-left w-full">
+                            <p className="font-bold text-gray-800 break-all truncate" title={file.name}>{file.name}</p>
+                            <div className="mt-1 text-xs text-gray-600">
+                              <span>{formatBytes(file.size)}</span>
+                              <span className="mx-1">→</span>
+                              {isProcessing && !result && !error ? (
+                                <span className="italic text-gray-500">сжимается...</span>
+                              ) : result ? (
+                                <span className="font-medium text-green-600">{formatBytes(result.size)} ({sizeReduction}%)</span>
+                              ) : error ? (
+                                <span className="font-medium text-red-500">Ошибка</span>
+                              ) : '...'}
+                            </div>
+                          </div>
+                          
+                          <a
+                            href={result?.url}
+                            download={getCompressedFileName(file.name)}
+                            className={`w-full sm:w-auto flex-shrink-0 flex items-center justify-center text-center px-4 py-2 rounded-lg font-bold text-white text-sm transition-all duration-300 ${!result || isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                            aria-disabled={!result || isProcessing}
+                            onClick={(e) => (!result || isProcessing) && e.preventDefault()}
+                          >
+                            <DownloadIcon className="w-4 h-4 mr-2"/>
+                            Скачать
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+
+      // --- ТОЧКА ВХОДА И ОТРИСОВКА ПРИЛОЖЕНИЯ ---
+      const rootElement = document.getElementById('root');
+      if (rootElement) {
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(<App />);
+      }
+
+    </script>
+  </body>
+</html>
