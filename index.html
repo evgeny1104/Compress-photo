@@ -95,10 +95,10 @@
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
-            className={`flex justify-center items-center w-full px-6 py-12 border-2 border-dashed rounded-lg cursor-pointer transition-colors duration-300 ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}
+            className={`flex justify-center items-center w-full px-6 py-6 border-2 border-dashed rounded-lg cursor-pointer transition-colors duration-300 ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}
           >
             <div className="text-center">
-              <UploadIcon className={`w-12 h-12 mx-auto mb-4 transition-colors duration-300 ${isDragging ? 'text-blue-600' : 'text-gray-400'}`} />
+              <UploadIcon className={`w-12 h-12 mx-auto mb-3 transition-colors duration-300 ${isDragging ? 'text-blue-600' : 'text-gray-400'}`} />
               <h3 className="text-lg font-semibold text-gray-700">
                 Перетащите изображения сюда
               </h3>
@@ -295,18 +295,18 @@
 
 
         return (
-          <div className="flex justify-center py-1 bg-transparent font-sans">
-            <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl px-6 md:px-8 py-2 md:py-3 transition-all duration-300">
+          <div className="flex justify-center bg-transparent font-sans">
+            <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl px-6 md:px-8 py-4 transition-all duration-300">
               {originalFiles.length === 0 ? (
                 <>
-                  <h1 className="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-2">Сжатие Изображений</h1>
-                  <p className="text-center text-gray-500 mb-6">Уменьшайте размер файлов JPEG. Можно загрузить до 5 файлов.</p>
+                  <h1 className="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-1">Сжатие Изображений</h1>
+                  <p className="text-center text-gray-500 mb-4">Уменьшайте размер файлов JPEG. Можно загрузить до 5 файлов.</p>
                   <FileUploader onFileSelect={handleFileSelect} />
                   {errors.has('global') && <p className="text-red-500 text-center mt-4">{errors.get('global')}</p>}
                 </>
               ) : (
                 <div>
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="flex justify-between items-center mb-3">
                     <h2 className="text-xl font-bold text-gray-800">Результаты сжатия</h2>
                     <button
                       onClick={handleReset}
@@ -316,7 +316,7 @@
                     </button>
                   </div>
                   
-                  <div className="mb-6">
+                  <div className="mb-4">
                       <label htmlFor="quality" className="block text-sm font-medium text-gray-700 mb-2">Качество: <span className="font-bold text-blue-600">{Math.round(quality * 100)}%</span></label>
                       <input
                           id="quality"
@@ -331,7 +331,7 @@
                       />
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {originalFiles.map(file => {
                       const result = compressedResults.get(file.name);
                       const error = errors.get(file.name);
